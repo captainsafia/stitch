@@ -1,6 +1,6 @@
 # :thread: stitch: the intent log for agents and humans
 
-Stitch is a tool to help agents (and humans) record their **intent** ("stitches") and bind it to **git commits/diffs**, forming an **intent DAG** that can't be represented by git's linear history or the textual representation of a diff.
+Stitch is a tool to help agents (and humans!) record their **intent** ("stitches") and bind it to **git commits/diffs**, forming an **intent DAG** that can't be represented by git's linear history or the textual representation of a diff.
 
 Stitch helps you capture the "why" behind your code changes, creating a semantic layer on top of git that connects you and your agents' intentions to your implementations.
 
@@ -70,7 +70,7 @@ stitch start Implement user authentication
 Create a child stitch under the current stitch. Useful for breaking down larger tasks.
 
 ```bash
-stitch child Add password validation
+stitch child "Add password validation"
 ```
 
 #### `stitch switch <id>`
