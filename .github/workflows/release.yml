@@ -201,15 +201,13 @@ jobs:
       # Publish to npm with preview tag
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish to npm (preview)
         run: |
           cd npm-package
           npm publish --access public --tag preview --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Create GitHub prerelease
       - name: Create GitHub Prerelease
