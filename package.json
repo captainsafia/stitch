@@ -18,7 +18,7 @@
     }
   },
   "scripts": {
-    "build": "bun build src/api.ts --outdir dist --target node && dts-bundle-generator -o dist/api.d.ts src/api.ts",
+    "build": "bun build src/api.ts --outdir dist --target bun && dts-bundle-generator -o dist/api.d.ts src/api.ts",
     "build:cli": "bun build src/cli.ts --outdir dist --target bun",
     "compile": "bun build src/cli.ts --compile --outfile burrow",
     "compile:linux-x64": "bun build src/cli.ts --compile --target=bun-linux-x64 --outfile burrow-linux-x64",
