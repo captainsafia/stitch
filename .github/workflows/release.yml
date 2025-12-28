@@ -205,6 +205,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish to npm (preview)
+        if: github.event.repository.private == false
         run: |
           cd npm-package
           npm publish --access public --tag preview --provenance
@@ -269,6 +270,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish to npm
+        if: github.event.repository.private == false
         run: |
           cd npm-package
           npm publish --access public --provenance
