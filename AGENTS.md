@@ -32,6 +32,8 @@ This ensures all changes to the stitch codebase are self-documented with intent 
 5. Repeat steps 2-4 as needed
 6. Edit your stitch file to add notes, constraints, or alternatives considered
 
+**After completing a task, agents must ensure that updated stitches are committed to source with a `chore` commit.**
+
 ## Project Overview
 
 Stitch is a local-first CLI tool for recording developer intent and binding it to git commits/diffs. It creates an "intent DAG" that adds semantic meaning to git history.
