@@ -4,13 +4,18 @@ on:
   push:
     tags:
       - 'v*.*.*'
+    branches:
+      - main
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
-  build-linux-windows:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -20,12 +25,37 @@ jobs:
       - run: bun run typecheck
       - run: bun test
 
-      # Build Linux and Windows platforms
+      # Set version based on trigger
+      - name: Set version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          else
+            BASE_VERSION=$(jq -r .version package.json)
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            VERSION="${BASE_VERSION}-preview.${SHORT_SHA}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Setting version to: $VERSION"
+
+      # Update package.json version for preview builds
+      - name: Update package.json version
+        if: github.ref_type != 'tag'
+        run: |
+          jq --arg v "${{ steps.version.outputs.version }}" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      # Build npm package
+      - run: bun run build
+
+      # Build binaries for all platforms
       - run: bun build src/cli.ts --compile --minify --target=bun-linux-x64 --outfile stitch-linux-x64
       - run: bun build src/cli.ts --compile --minify --target=bun-linux-arm64 --outfile stitch-linux-arm64
       - run: bun build src/cli.ts --compile --minify --target=bun-windows-x64 --outfile stitch-windows-x64.exe
 
-      # Upload artifacts for release job
+      # Upload artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-linux-windows
@@ -33,15 +63,32 @@ jobs:
             stitch-linux-x64
             stitch-linux-arm64
             stitch-windows-x64.exe
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: |
+            dist/
+            package.json
+          retention-days: 7
 
   build-macos:
     runs-on: macos-latest
+    needs: build
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install
+
+      # Update package.json version for preview builds
+      - name: Update package.json version
+        if: github.ref_type != 'tag'
+        run: |
+          jq --arg v "${{ needs.build.outputs.version }}" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
 
       # Build macOS binaries
       - run: bun build src/cli.ts --compile --minify --target=bun-darwin-x64 --outfile stitch-darwin-x64
@@ -78,16 +125,18 @@ jobs:
           rm certificate.p12
           security delete-keychain build.keychain
 
-      # Upload artifacts for release job
+      # Upload artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-macos
           path: |
             stitch-darwin-x64
             stitch-darwin-arm64
+          retention-days: 7
 
-  release:
-    needs: [build-linux-windows, build-macos]
+  prerelease:
+    if: github.ref_type != 'tag'
+    needs: [build, build-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -102,8 +151,98 @@ jobs:
           name: binaries-macos
           path: ./binaries
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: ./npm-package
+
+      # Publish to npm with preview tag
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm (preview)
+        run: |
+          cd npm-package
+          npm publish --access public --tag preview --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Create GitHub prerelease
+      - name: Create GitHub Prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: Preview ${{ needs.build.outputs.version }}
+          prerelease: true
+          files: |
+            binaries/stitch-linux-x64
+            binaries/stitch-linux-arm64
+            binaries/stitch-darwin-x64
+            binaries/stitch-darwin-arm64
+            binaries/stitch-windows-x64.exe
+          body: |
+            ## Preview Release
+
+            This is an automated preview release from the `main` branch.
+
+            **Version:** `${{ needs.build.outputs.version }}`
+            **Commit:** ${{ github.sha }}
+
+            ### Installation
+
+            **npm (preview tag):**
+            ```bash
+            npm install -g @captainsafia/stitch@preview
+            ```
+
+            **Binary download:**
+            Download the appropriate binary for your platform from the assets below.
+
+            **curl (Linux/macOS):**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash --preview
+            ```
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [build, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux-windows
+          path: ./binaries
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-macos
+          path: ./binaries
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: ./npm-package
+
+      # Publish to npm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm
+        run: |
+          cd npm-package
+          npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Create GitHub release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             binaries/stitch-linux-x64
@@ -112,23 +251,22 @@ jobs:
             binaries/stitch-darwin-arm64
             binaries/stitch-windows-x64.exe
           generate_release_notes: true
+          body: |
+            ## Installation
 
-  publish-npm:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install
-      - run: bun run build
+            **npm:**
+            ```bash
+            npm install -g @captainsafia/stitch
+            ```
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+            **Binary download:**
+            Download the appropriate binary for your platform from the assets below.
 
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            **curl (Linux/macOS):**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash
+            ```
+
+            ---
+
+            [Full Changelog](https://github.com/captainsafia/stitch/compare/${{ github.event.before }}...${{ github.ref_name }})

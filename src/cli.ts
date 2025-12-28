@@ -16,11 +16,7 @@ import {
   NoCurrentStitchError,
 } from "./core/errors.ts";
 
-const packageJson = {
-  version: "0.1.0",
-  description:
-    "A local-first CLI for recording intent and binding it to git commits/diffs",
-};
+const packageJson = await import("../package.json");
 
 const program = new Command();
 
