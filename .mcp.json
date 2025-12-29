@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "stitch": {
+      "type": "stdio",
+      "command": "bun",
+      "args": [
+        "src/mcp.ts"
+      ],
+      "env": {}
+    }
+  }
+}
