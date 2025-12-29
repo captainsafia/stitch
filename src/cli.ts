@@ -319,10 +319,11 @@ program
     }
   });
 
-// stitch update [--version <ver>] [--preview] [--yes]
+// stitch update [--target <ver>] [--preview] [--yes]
 program
   .command("update")
   .description("Update stitch to the latest version")
+  .allowExcessArguments(false)
   .option("-t, --target <version>", "Install a specific version")
   .option("-p, --preview", "Install the latest preview version")
   .option("-y, --yes", "Skip confirmation prompt")
@@ -405,11 +406,6 @@ program
           console.log(
             renderSuccess(`Updated stitch from v${current} to v${targetVersion}`)
           );
-          if (installMethod === "binary") {
-            console.log(
-              "Please restart your terminal for changes to take effect."
-            );
-          }
         } else {
           console.error("");
           console.error(`Error: Update failed: ${result.error}`);

@@ -157,4 +157,18 @@ describe("CLI Integration", () => {
     expect(exitCode).toBe(1);
     expect(stderr).toContain("not initialized");
   });
+
+  test("stitch update rejects positional arguments", async () => {
+    const proc = Bun.spawn(["bun", cliPath, "update", "v1.0.0-preview.00492d9"], {
+      cwd: testDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const exitCode = await proc.exited;
+    const stderr = await new Response(proc.stderr).text();
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("too many arguments");
+  });
 });
