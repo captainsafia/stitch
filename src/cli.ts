@@ -214,12 +214,13 @@ program
 program
   .command("show")
   .description("Show details of a stitch")
-  .argument("<id>", "Stitch ID to show")
+  .argument("<id>", "Stitch ID to show (use 'current' for the current stitch)")
   .action(async (id: string) => {
     using client = new StitchClient();
 
     try {
-      const doc = await client.get(id);
+      const stitchId = id === "current" ? await client.requireCurrentId() : id;
+      const doc = await client.get(stitchId);
       console.log(renderStitchDoc(doc));
     } catch (error) {
       handleError(error);

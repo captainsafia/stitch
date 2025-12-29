@@ -165,6 +165,14 @@ export class StitchClient {
   }
 
   /**
+   * Get the current stitch ID, throwing if none is set
+   */
+  async requireCurrentId(): Promise<StitchId> {
+    const root = await this.getRepoRoot();
+    return requireCurrentStitchId(root);
+  }
+
+  /**
    * Open a stitch in the user's editor
    */
   async openInEditor(id?: StitchId): Promise<void> {
