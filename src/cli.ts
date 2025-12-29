@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
+import { join } from "node:path";
 import { Command, Option } from "commander";
+import { ReleaseNotifier } from "gh-release-update-notifier";
 import { StitchClient } from "./api.ts";
 import {
   renderStitchList,
@@ -18,13 +20,12 @@ import {
   NoCurrentStitchError,
 } from "./core/errors.ts";
 import {
-  getLatestVersion,
-  isUpdateAvailable,
   installUpdate,
   detectPlatform,
   detectInstallMethod,
   getInstallMethodDescription,
 } from "./platform/update/index.ts";
+import { getConfigDir } from "./platform/paths.ts";
 
 const packageJson = await import("../package.json");
 
@@ -35,19 +36,31 @@ program
   .description(packageJson.description)
   .version(packageJson.version);
 
+/*
+*/
+function createNotifier(): ReleaseNotifier {
+  const cacheFilePath = join(getConfigDir(), "update-check.json");
+  return new ReleaseNotifier({
+    repo: "captainsafia/stitch",
+    checkInterval: 24 * 60 * 60 * 1000, // 24 hours
+    cacheFilePath,
+    token: process.env["GITHUB_TOKEN"],
+  });
+}
+
 /**
  * Check for updates in the background (non-blocking)
  * Only runs for commands that aren't update or help
  */
 async function checkForUpdates(): Promise<void> {
   try {
-    const versions = await getLatestVersion();
     const current = packageJson.version;
-
-    if (versions.stable && isUpdateAvailable(current, versions.stable)) {
+    const notifier = createNotifier();
+    const result = await notifier.checkVersion(current, true);
+    if (result.updateAvailable && result.latestVersion) {
       console.error("");
       console.error(
-        `A new version of stitch is available: ${versions.stable} (current: ${current})`
+        `A new version of stitch is available: ${result.latestVersion} (current: ${current})`
       );
       console.error("Run 'stitch update' to update.");
       console.error("");
@@ -325,22 +338,26 @@ program
           targetVersion = options.target;
         } else if (options.preview) {
           console.log("Checking for latest preview version...");
-          const versions = await getLatestVersion(true);
-          if (!versions.preview) {
+          const notifier = createNotifier();
+          notifier.clearCache();
+          const previewRelease = await notifier.getLatestPrerelease();
+          if (!previewRelease) {
             console.error("Error: No preview version available.");
             process.exit(1);
           }
-          targetVersion = versions.preview;
+          targetVersion = previewRelease.tagName.replace(/^v/, "");
         } else {
           console.log("Checking for latest version...");
-          const versions = await getLatestVersion(true);
-          if (!versions.stable) {
+          const notifier = createNotifier();
+          notifier.clearCache();
+          const stableRelease = await notifier.getLatestRelease();
+          if (!stableRelease) {
             console.error(
               "Error: Could not fetch latest version. Check your network connection."
             );
             process.exit(1);
           }
-          targetVersion = versions.stable;
+          targetVersion = stableRelease.tagName.replace(/^v/, "");
         }
 
         // Check if update is needed
