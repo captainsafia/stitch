@@ -62,5 +62,8 @@
     "dag",
     "cli",
     "developer-tools"
-  ]
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  }
 }

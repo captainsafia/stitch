@@ -36,3 +36,6 @@ build
 Thumbs.db
 
 stitch
+stitch-*
+dist/
+*.log

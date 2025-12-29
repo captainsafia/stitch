@@ -18,13 +18,13 @@ Stitch helps you capture the "why" behind your code changes, creating a semantic
 
 ```bash
 # Install both CLI and MCP server (default)
-curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview
 
 # Install CLI only
-curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --cli-only
+curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview --cli-only
 
 # Install MCP server only
-curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --mcp-only
+curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview --mcp-only
 ```
 
 ### Building from Source
@@ -206,7 +206,7 @@ Consider adding OAuth support in a future iteration.
 Stitch can also be used as a TypeScript library:
 
 ```typescript
-import { StitchClient } from 'stitch';
+import { StitchClient } from '@captainsafia/stitch';
 
 const client = new StitchClient();
 
