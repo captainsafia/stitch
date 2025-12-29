@@ -20,10 +20,15 @@ jobs:
       - run: bun run typecheck
       - run: bun test
 
-      # Build Linux and Windows platforms
-      - run: bun build src/cli.ts --compile --minify --target=bun-linux-x64 --outfile stitch-linux-x64
-      - run: bun build src/cli.ts --compile --minify --target=bun-linux-arm64 --outfile stitch-linux-arm64
-      - run: bun build src/cli.ts --compile --minify --target=bun-windows-x64 --outfile stitch-windows-x64.exe
+      # Build CLI for Linux and Windows platforms
+      - run: bun run compile:cli:linux-x64
+      - run: bun run compile:cli:linux-arm64
+      - run: bun run compile:cli:windows-x64
+
+      # Build MCP for Linux and Windows platforms
+      - run: bun run compile:mcp:linux-x64
+      - run: bun run compile:mcp:linux-arm64
+      - run: bun run compile:mcp:windows-x64
 
       # Upload artifacts
       - uses: actions/upload-artifact@v4
@@ -41,6 +46,21 @@ jobs:
           name: stitch-pr-${{ github.event.pull_request.number }}-windows-x64
           path: stitch-windows-x64.exe
           retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stitch-mcp-pr-${{ github.event.pull_request.number }}-linux-x64
+          path: stitch-mcp-linux-x64
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stitch-mcp-pr-${{ github.event.pull_request.number }}-linux-arm64
+          path: stitch-mcp-linux-arm64
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stitch-mcp-pr-${{ github.event.pull_request.number }}-windows-x64
+          path: stitch-mcp-windows-x64.exe
+          retention-days: 30
 
   build-macos:
     runs-on: macos-latest
@@ -51,9 +71,13 @@ jobs:
           bun-version: latest
       - run: bun install
 
-      # Build macOS binaries
-      - run: bun build src/cli.ts --compile --minify --target=bun-darwin-x64 --outfile stitch-darwin-x64
-      - run: bun build src/cli.ts --compile --minify --target=bun-darwin-arm64 --outfile stitch-darwin-arm64
+      # Build CLI for macOS
+      - run: bun run compile:cli:darwin-x64
+      - run: bun run compile:cli:darwin-arm64
+
+      # Build MCP for macOS
+      - run: bun run compile:mcp:darwin-x64
+      - run: bun run compile:mcp:darwin-arm64
 
       # Import code signing certificate
       - name: Import Code Signing Certificate
@@ -88,7 +112,7 @@ jobs:
           IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
           echo "Using identity: $IDENTITY"
 
-          # Sign binaries with entitlements
+          # Sign CLI binaries with entitlements
           codesign --force --options runtime --timestamp \
             --entitlements .github/workflows/assets/entitlements.plist \
             --sign "$IDENTITY" stitch-darwin-x64
@@ -96,9 +120,19 @@ jobs:
             --entitlements .github/workflows/assets/entitlements.plist \
             --sign "$IDENTITY" stitch-darwin-arm64
 
+          # Sign MCP binaries with entitlements
+          codesign --force --options runtime --timestamp \
+            --entitlements .github/workflows/assets/entitlements.plist \
+            --sign "$IDENTITY" stitch-mcp-darwin-x64
+          codesign --force --options runtime --timestamp \
+            --entitlements .github/workflows/assets/entitlements.plist \
+            --sign "$IDENTITY" stitch-mcp-darwin-arm64
+
           # Verify signatures
           codesign --verify --verbose stitch-darwin-x64
           codesign --verify --verbose stitch-darwin-arm64
+          codesign --verify --verbose stitch-mcp-darwin-x64
+          codesign --verify --verbose stitch-mcp-darwin-arm64
 
       # Notarize macOS binaries
       - name: Notarize macOS Binaries
@@ -110,26 +144,47 @@ jobs:
           # Create zip files for notarization
           zip stitch-darwin-x64.zip stitch-darwin-x64
           zip stitch-darwin-arm64.zip stitch-darwin-arm64
+          zip stitch-mcp-darwin-x64.zip stitch-mcp-darwin-x64
+          zip stitch-mcp-darwin-arm64.zip stitch-mcp-darwin-arm64
 
           # Extract team ID from signing identity
           TEAM_ID=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -n 's/.*(\([A-Z0-9]*\)).*/\1/p')
           echo "Using team ID: $TEAM_ID"
 
-          # Submit for notarization and wait
+          # Submit all binaries for notarization in parallel
           xcrun notarytool submit stitch-darwin-x64.zip \
             --apple-id "$APPLE_ID_EMAIL" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$TEAM_ID" \
-            --wait
+            --wait &
+          PID1=$!
 
           xcrun notarytool submit stitch-darwin-arm64.zip \
             --apple-id "$APPLE_ID_EMAIL" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$TEAM_ID" \
-            --wait
+            --wait &
+          PID2=$!
+
+          xcrun notarytool submit stitch-mcp-darwin-x64.zip \
+            --apple-id "$APPLE_ID_EMAIL" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait &
+          PID3=$!
+
+          xcrun notarytool submit stitch-mcp-darwin-arm64.zip \
+            --apple-id "$APPLE_ID_EMAIL" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait &
+          PID4=$!
+
+          # Wait for all notarization jobs to complete
+          wait $PID1 $PID2 $PID3 $PID4
 
           # Clean up zip files
-          rm stitch-darwin-x64.zip stitch-darwin-arm64.zip
+          rm stitch-darwin-x64.zip stitch-darwin-arm64.zip stitch-mcp-darwin-x64.zip stitch-mcp-darwin-arm64.zip
 
       # Upload artifacts
       - uses: actions/upload-artifact@v4
@@ -141,4 +196,14 @@ jobs:
         with:
           name: stitch-pr-${{ github.event.pull_request.number }}-darwin-arm64
           path: stitch-darwin-arm64
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stitch-mcp-pr-${{ github.event.pull_request.number }}-darwin-x64
+          path: stitch-mcp-darwin-x64
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stitch-mcp-pr-${{ github.event.pull_request.number }}-darwin-arm64
+          path: stitch-mcp-darwin-arm64
           retention-days: 30

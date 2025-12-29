@@ -50,10 +50,15 @@ jobs:
       # Build npm package
       - run: bun run build
 
-      # Build binaries for all platforms
-      - run: bun run compile:linux-x64 && mv burrow-linux-x64 stitch-linux-x64
-      - run: bun run compile:linux-arm64 && mv burrow-linux-arm64 stitch-linux-arm64
-      - run: bun run compile:windows-x64 && mv burrow-windows-x64.exe stitch-windows-x64.exe
+      # Build CLI binaries for all platforms
+      - run: bun run compile:cli:linux-x64
+      - run: bun run compile:cli:linux-arm64
+      - run: bun run compile:cli:windows-x64
+
+      # Build MCP binaries for all platforms
+      - run: bun run compile:mcp:linux-x64
+      - run: bun run compile:mcp:linux-arm64
+      - run: bun run compile:mcp:windows-x64
 
       # Upload artifacts
       - uses: actions/upload-artifact@v4
@@ -63,6 +68,9 @@ jobs:
             stitch-linux-x64
             stitch-linux-arm64
             stitch-windows-x64.exe
+            stitch-mcp-linux-x64
+            stitch-mcp-linux-arm64
+            stitch-mcp-windows-x64.exe
           retention-days: 7
 
       - uses: actions/upload-artifact@v4
@@ -90,9 +98,13 @@ jobs:
           jq --arg v "${{ needs.build.outputs.version }}" '.version = $v' package.json > package.json.tmp
           mv package.json.tmp package.json
 
-      # Build macOS binaries
-      - run: bun run compile:darwin-x64 && mv burrow-darwin-x64 stitch-darwin-x64
-      - run: bun run compile:darwin-arm64 && mv burrow-darwin-arm64 stitch-darwin-arm64
+      # Build macOS CLI binaries
+      - run: bun run compile:cli:darwin-x64
+      - run: bun run compile:cli:darwin-arm64
+
+      # Build macOS MCP binaries
+      - run: bun run compile:mcp:darwin-x64
+      - run: bun run compile:mcp:darwin-arm64
 
       # Import code signing certificate
       - name: Import Code Signing Certificate
@@ -125,7 +137,7 @@ jobs:
           IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
           echo "Using identity: $IDENTITY"
 
-          # Sign binaries with entitlements
+          # Sign CLI binaries with entitlements
           codesign --force --options runtime --timestamp \
             --entitlements .github/workflows/assets/entitlements.plist \
             --sign "$IDENTITY" stitch-darwin-x64
@@ -133,9 +145,19 @@ jobs:
             --entitlements .github/workflows/assets/entitlements.plist \
             --sign "$IDENTITY" stitch-darwin-arm64
 
+          # Sign MCP binaries with entitlements
+          codesign --force --options runtime --timestamp \
+            --entitlements .github/workflows/assets/entitlements.plist \
+            --sign "$IDENTITY" stitch-mcp-darwin-x64
+          codesign --force --options runtime --timestamp \
+            --entitlements .github/workflows/assets/entitlements.plist \
+            --sign "$IDENTITY" stitch-mcp-darwin-arm64
+
           # Verify signatures
           codesign --verify --verbose stitch-darwin-x64
           codesign --verify --verbose stitch-darwin-arm64
+          codesign --verify --verbose stitch-mcp-darwin-x64
+          codesign --verify --verbose stitch-mcp-darwin-arm64
 
       # Notarize macOS binaries
       - name: Notarize macOS Binaries
@@ -146,26 +168,47 @@ jobs:
           # Create zip files for notarization
           zip stitch-darwin-x64.zip stitch-darwin-x64
           zip stitch-darwin-arm64.zip stitch-darwin-arm64
+          zip stitch-mcp-darwin-x64.zip stitch-mcp-darwin-x64
+          zip stitch-mcp-darwin-arm64.zip stitch-mcp-darwin-arm64
 
           # Extract team ID from signing identity
           TEAM_ID=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -n 's/.*(\([A-Z0-9]*\)).*/\1/p')
           echo "Using team ID: $TEAM_ID"
 
-          # Submit for notarization and wait
+          # Submit all binaries for notarization in parallel
           xcrun notarytool submit stitch-darwin-x64.zip \
             --apple-id "$APPLE_ID_EMAIL" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$TEAM_ID" \
-            --wait
+            --wait &
+          PID1=$!
 
           xcrun notarytool submit stitch-darwin-arm64.zip \
             --apple-id "$APPLE_ID_EMAIL" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$TEAM_ID" \
-            --wait
+            --wait &
+          PID2=$!
+
+          xcrun notarytool submit stitch-mcp-darwin-x64.zip \
+            --apple-id "$APPLE_ID_EMAIL" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait &
+          PID3=$!
+
+          xcrun notarytool submit stitch-mcp-darwin-arm64.zip \
+            --apple-id "$APPLE_ID_EMAIL" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait &
+          PID4=$!
+
+          # Wait for all notarization jobs to complete
+          wait $PID1 $PID2 $PID3 $PID4
 
           # Clean up zip files
-          rm stitch-darwin-x64.zip stitch-darwin-arm64.zip
+          rm stitch-darwin-x64.zip stitch-darwin-arm64.zip stitch-mcp-darwin-x64.zip stitch-mcp-darwin-arm64.zip
 
       # Upload artifacts
       - uses: actions/upload-artifact@v4
@@ -174,6 +217,8 @@ jobs:
           path: |
             stitch-darwin-x64
             stitch-darwin-arm64
+            stitch-mcp-darwin-x64
+            stitch-mcp-darwin-arm64
           retention-days: 7
 
   prerelease:
@@ -223,6 +268,11 @@ jobs:
             binaries/stitch-darwin-x64
             binaries/stitch-darwin-arm64
             binaries/stitch-windows-x64.exe
+            binaries/stitch-mcp-linux-x64
+            binaries/stitch-mcp-linux-arm64
+            binaries/stitch-mcp-darwin-x64
+            binaries/stitch-mcp-darwin-arm64
+            binaries/stitch-mcp-windows-x64.exe
           body: |
             ## Preview Release
 
@@ -233,12 +283,22 @@ jobs:
 
             ### Installation
 
-            **Binary download:**
-            Download the appropriate binary for your platform from the assets below.
+            **CLI binary download:**
+            Download the appropriate `stitch-*` binary for your platform from the assets below.
+
+            **MCP server binary download:**
+            Download the appropriate `stitch-mcp-*` binary for your platform from the assets below.
 
             **curl (Linux/macOS):**
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash --preview
+            # Install both CLI and MCP server (default)
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview
+
+            # Install CLI only
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview --cli-only
+
+            # Install MCP server only
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview --mcp-only
             ```
 
   release:
@@ -287,16 +347,31 @@ jobs:
             binaries/stitch-darwin-x64
             binaries/stitch-darwin-arm64
             binaries/stitch-windows-x64.exe
+            binaries/stitch-mcp-linux-x64
+            binaries/stitch-mcp-linux-arm64
+            binaries/stitch-mcp-darwin-x64
+            binaries/stitch-mcp-darwin-arm64
+            binaries/stitch-mcp-windows-x64.exe
           generate_release_notes: true
           body: |
             ## Installation
 
-            **Binary download:**
-            Download the appropriate binary for your platform from the assets below.
+            **CLI binary download:**
+            Download the appropriate `stitch-*` binary for your platform from the assets below.
+
+            **MCP server binary download:**
+            Download the appropriate `stitch-mcp-*` binary for your platform from the assets below.
 
             **curl (Linux/macOS):**
             ```bash
+            # Install both CLI and MCP server (default)
             curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash
+
+            # Install CLI only
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --cli-only
+
+            # Install MCP server only
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --mcp-only
             ```
 
             ---

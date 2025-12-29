@@ -10,13 +10,21 @@ Stitch helps you capture the "why" behind your code changes, creating a semantic
 - **Git Integration**: Link stitches to commits, commit ranges, and staged diffs
 - **DAG Relationships**: Build hierarchical relationships with parent/child stitches and dependencies
 - **Stitch Blame**: See which intent is behind each line of code
+- **MCP Server**: Expose stitch functionality to AI agents via the Model Context Protocol
 
 ## Installation
 
 ### Binary (Recommended)
 
 ```bash
+# Install both CLI and MCP server (default)
 curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash
+
+# Install CLI only
+curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --cli-only
+
+# Install MCP server only
+curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --mcp-only
 ```
 
 ### Building from Source
@@ -216,6 +224,71 @@ for (const line of blame) {
 }
 
 client.close();
+```
+
+## MCP Server
+
+Stitch includes an MCP (Model Context Protocol) server that allows AI agents to interact with stitch functionality programmatically. The MCP server exposes stateless, explicit tools that don't rely on "current stitch" state.
+
+### Running the MCP Server
+
+```bash
+# Start the MCP server (stdio transport)
+stitch-mcp
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `stitch_create` | Create a new stitch document |
+| `stitch_get` | Get a stitch by ID |
+| `stitch_list` | List stitches with optional filters |
+| `stitch_update_frontmatter` | Update stitch metadata |
+| `stitch_update_body` | Update stitch markdown body |
+| `stitch_link_commit` | Link a commit to a stitch |
+| `stitch_link_range` | Link a commit range to a stitch |
+| `stitch_link_staged_diff` | Link staged diff fingerprint |
+| `stitch_blame` | Get stitch attribution for file lines |
+
+### Example Tool Usage
+
+All tools require explicit `repoRoot` and `stitchId` parameters (no implicit state):
+
+```json
+{
+  "tool": "stitch_create",
+  "arguments": {
+    "repoRoot": "/path/to/repo",
+    "title": "Implement new feature"
+  }
+}
+```
+
+```json
+{
+  "tool": "stitch_link_commit",
+  "arguments": {
+    "repoRoot": "/path/to/repo",
+    "stitchId": "S-20251228-3f2a",
+    "sha": "abc1234"
+  }
+}
+```
+
+### Configuring with AI Agents
+
+To use stitch-mcp with an MCP-compatible AI agent, add it to your agent's MCP server configuration:
+
+```json
+{
+  "mcpServers": {
+    "stitch": {
+      "command": "stitch-mcp",
+      "args": []
+    }
+  }
+}
 ```
 
 ## Configuration
