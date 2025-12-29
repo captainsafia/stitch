@@ -139,6 +139,32 @@ export function renderBlameJson(blameLines: BlameLine[]): string {
 }
 
 /**
+ * Render a list of stitches as JSON
+ */
+export function renderStitchListJson(stitches: StitchDoc[]): string {
+  const items = stitches.map((doc) => ({
+    id: doc.frontmatter.id,
+    title: doc.frontmatter.title,
+    status: doc.frontmatter.status,
+    created_at: doc.frontmatter.created_at,
+    updated_at: doc.frontmatter.updated_at,
+    provenance: doc.frontmatter.provenance,
+    confidence: doc.frontmatter.confidence,
+    tags: doc.frontmatter.tags,
+    parent: doc.frontmatter.relations?.parent,
+    filePath: doc.filePath,
+  }));
+  return JSON.stringify(items, null, 2);
+}
+
+/**
+ * Render status information as JSON
+ */
+export function renderStatusJson(status: StatusResult): string {
+  return JSON.stringify(status, null, 2);
+}
+
+/**
  * Format an ISO date string for display
  */
 function formatDate(isoString: string): string {

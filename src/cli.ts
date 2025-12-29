@@ -4,7 +4,9 @@ import { Command, Option } from "commander";
 import { StitchClient } from "./api.ts";
 import {
   renderStitchList,
+  renderStitchListJson,
   renderStatus,
+  renderStatusJson,
   renderStitchDoc,
   renderBlamePlain,
   renderBlameJson,
@@ -142,16 +144,21 @@ program
     }
   });
 
-// stitch status
+// stitch status [--json]
 program
   .command("status")
   .description("Show current stitch status and lineage")
-  .action(async () => {
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: { json?: boolean }) => {
     using client = new StitchClient();
 
     try {
       const status = await client.status();
-      console.log(renderStatus(status));
+      if (options.json) {
+        console.log(renderStatusJson(status));
+      } else {
+        console.log(renderStatus(status));
+      }
     } catch (error) {
       handleError(error);
     }
@@ -172,7 +179,7 @@ program
     }
   });
 
-// stitch list [--status <status>]
+// stitch list [--status <status>] [--json]
 program
   .command("list")
   .description("List all stitches")
@@ -184,7 +191,8 @@ program
       "abandoned",
     ])
   )
-  .action(async (options: { status?: string }) => {
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: { status?: string; json?: boolean }) => {
     using client = new StitchClient();
 
     try {
@@ -192,7 +200,11 @@ program
         ? { status: options.status as "open" | "closed" | "superseded" | "abandoned" }
         : undefined;
       const stitches = await client.list(filter);
-      console.log(renderStitchList(stitches));
+      if (options.json) {
+        console.log(renderStitchListJson(stitches));
+      } else {
+        console.log(renderStitchList(stitches));
+      }
     } catch (error) {
       handleError(error);
     }
