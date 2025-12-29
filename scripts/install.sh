@@ -110,9 +110,21 @@ if [ "$CLI_ONLY" = true ] && [ "$MCP_ONLY" = true ]; then
     error "Cannot specify both --cli-only and --mcp-only"
 fi
 
-# Get the latest release version
+# Get the latest stable release version
 get_latest_version() {
     curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/'
+}
+
+# Get the latest preview (prerelease) version
+get_latest_preview_version() {
+    # Fetch recent releases and find the first prerelease
+    # Using per_page=10 since the latest prerelease may not be the most recent release
+    curl -s "https://api.github.com/repos/$REPO/releases?per_page=10" | \
+        grep -E '"tag_name"|"prerelease"' | \
+        paste - - | \
+        grep 'true' | \
+        head -1 | \
+        sed -E 's/.*"tag_name": "([^"]+)".*/\1/'
 }
 
 # Download binary
@@ -185,7 +197,14 @@ main() {
 
     # Determine version (only for non-PR installs)
     if [ -z "$PR_NUMBER" ]; then
-        if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
+        if [ "$VERSION" = "preview" ]; then
+            log "Fetching latest preview version..."
+            VERSION=$(get_latest_preview_version)
+            if [ -z "$VERSION" ]; then
+                error "Failed to find a preview version. No prerelease found."
+            fi
+            log "Found preview version: $VERSION"
+        elif [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
             VERSION=$(get_latest_version)
             if [ -z "$VERSION" ]; then
                 error "Failed to determine latest version"
