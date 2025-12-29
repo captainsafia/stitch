@@ -15,6 +15,14 @@ import {
   NotInitializedError,
   NoCurrentStitchError,
 } from "./core/errors.ts";
+import {
+  getLatestVersion,
+  isUpdateAvailable,
+  installUpdate,
+  detectPlatform,
+  detectInstallMethod,
+  getInstallMethodDescription,
+} from "./platform/update/index.ts";
 
 const packageJson = await import("../package.json");
 
@@ -24,6 +32,36 @@ program
   .name("stitch")
   .description(packageJson.description)
   .version(packageJson.version);
+
+/**
+ * Check for updates in the background (non-blocking)
+ * Only runs for commands that aren't update or help
+ */
+async function checkForUpdates(): Promise<void> {
+  try {
+    const versions = await getLatestVersion();
+    const current = packageJson.version;
+
+    if (versions.stable && isUpdateAvailable(current, versions.stable)) {
+      console.error("");
+      console.error(
+        `A new version of stitch is available: ${versions.stable} (current: ${current})`
+      );
+      console.error("Run 'stitch update' to update.");
+      console.error("");
+    }
+  } catch {
+    // Silently ignore version check errors
+  }
+}
+
+// Run update check in background for non-update, non-help commands
+const args = process.argv.slice(2);
+const skipCheckCommands = ["update", "--help", "-h", "--version", "-V"];
+if (!args.some((arg) => skipCheckCommands.includes(arg))) {
+  // Fire and forget - don't await
+  checkForUpdates();
+}
 
 // stitch init
 program
@@ -254,6 +292,104 @@ program
       handleError(error);
     }
   });
+
+// stitch update [--version <ver>] [--preview] [--yes]
+program
+  .command("update")
+  .description("Update stitch to the latest version")
+  .option("-t, --target <version>", "Install a specific version")
+  .option("-p, --preview", "Install the latest preview version")
+  .option("-y, --yes", "Skip confirmation prompt")
+  .action(
+    async (options: { target?: string; preview?: boolean; yes?: boolean }) => {
+      try {
+        const current = packageJson.version;
+        const installMethod = detectInstallMethod();
+        let targetVersion: string;
+
+        // Determine target version
+        if (options.target) {
+          targetVersion = options.target;
+        } else if (options.preview) {
+          console.log("Checking for latest preview version...");
+          const versions = await getLatestVersion(true);
+          if (!versions.preview) {
+            console.error("Error: No preview version available.");
+            process.exit(1);
+          }
+          targetVersion = versions.preview;
+        } else {
+          console.log("Checking for latest version...");
+          const versions = await getLatestVersion(true);
+          if (!versions.stable) {
+            console.error(
+              "Error: Could not fetch latest version. Check your network connection."
+            );
+            process.exit(1);
+          }
+          targetVersion = versions.stable;
+        }
+
+        // Check if update is needed
+        if (current === targetVersion) {
+          console.log(`Already running stitch v${current}`);
+          return;
+        }
+
+        // Show update info
+        console.log("");
+        console.log(`Current version:  ${current}`);
+        console.log(`Target version:   ${targetVersion}`);
+        console.log(
+          `Install method:   ${getInstallMethodDescription(installMethod)}`
+        );
+        if (installMethod === "binary") {
+          console.log(`Platform:         ${detectPlatform()}`);
+        }
+        console.log("");
+
+        // Confirmation prompt
+        if (!options.yes) {
+          const answer = prompt("Proceed with update? [y/N]");
+
+          if (
+            answer?.toLowerCase() !== "y" &&
+            answer?.toLowerCase() !== "yes"
+          ) {
+            console.log("Update cancelled.");
+            return;
+          }
+        }
+
+        // Perform update
+        const result = await installUpdate(
+          targetVersion,
+          current,
+          (message) => {
+            console.log(message);
+          }
+        );
+
+        if (result.success) {
+          console.log("");
+          console.log(
+            renderSuccess(`Updated stitch from v${current} to v${targetVersion}`)
+          );
+          if (installMethod === "binary") {
+            console.log(
+              "Please restart your terminal for changes to take effect."
+            );
+          }
+        } else {
+          console.error("");
+          console.error(`Error: Update failed: ${result.error}`);
+          process.exit(1);
+        }
+      } catch (error) {
+        handleError(error);
+      }
+    }
+  );
 
 /**
  * Handle errors with appropriate exit codes and messages
