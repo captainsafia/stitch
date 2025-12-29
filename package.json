@@ -1,6 +1,6 @@
 {
   "name": "@captainsafia/stitch",
-  "version": "1.0.0-preview.f2a6c41",
+  "version": "1.0.0",
   "type": "module",
   "description": "A local-first CLI for recording intent and binding it to git commits/diffs",
   "main": "dist/api.js",
