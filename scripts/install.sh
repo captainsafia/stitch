@@ -3,10 +3,18 @@ set -e
 
 # stitch installer script
 # Usage: curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash
+#
+# Options:
+#   --version <ver>  Install a specific version
+#   --preview        Install the latest preview version
+#   --pr <number>    Install from a PR artifact (requires gh CLI)
+#   --cli-only       Only install the CLI binary
+#   --mcp-only       Only install the MCP server binary
 
 REPO="captainsafia/stitch"
 INSTALL_DIR="$HOME/.stitch/bin"
-BINARY_NAME="stitch"
+CLI_BINARY_NAME="stitch"
+MCP_BINARY_NAME="stitch-mcp"
 
 # Colors for output
 RED='\033[0;31m'
@@ -66,6 +74,8 @@ detect_platform() {
 # Parse command line arguments
 VERSION=""
 PR_NUMBER=""
+CLI_ONLY=false
+MCP_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -81,11 +91,24 @@ while [[ $# -gt 0 ]]; do
             PR_NUMBER="$2"
             shift 2
             ;;
+        --cli-only)
+            CLI_ONLY=true
+            shift
+            ;;
+        --mcp-only)
+            MCP_ONLY=true
+            shift
+            ;;
         *)
             error "Unknown option: $1"
             ;;
     esac
 done
+
+# Validate mutually exclusive options
+if [ "$CLI_ONLY" = true ] && [ "$MCP_ONLY" = true ]; then
+    error "Cannot specify both --cli-only and --mcp-only"
+fi
 
 # Get the latest release version
 get_latest_version() {
@@ -110,16 +133,47 @@ download_binary() {
 
 # Download from PR artifacts (requires gh CLI)
 download_pr_artifact() {
+    local binary_prefix="$1"
+    local binary_name="$2"
+    
     if ! command -v gh &> /dev/null; then
         error "GitHub CLI (gh) is required to download PR artifacts. Install it from https://cli.github.com/"
     fi
 
-    log "Downloading PR #$PR_NUMBER artifact for $PLATFORM..."
+    log "Downloading PR #$PR_NUMBER artifact for $binary_prefix-$PLATFORM..."
 
-    ARTIFACT_NAME="stitch-pr-${PR_NUMBER}-${PLATFORM}"
+    ARTIFACT_NAME="${binary_prefix}-pr-${PR_NUMBER}-${PLATFORM}"
 
     gh run download --repo "$REPO" --name "$ARTIFACT_NAME" --dir "$INSTALL_DIR" || \
         error "Failed to download artifact. Make sure the PR exists and has artifacts."
+}
+
+# Install a binary
+install_binary() {
+    local binary_prefix="$1"
+    local binary_name="$2"
+    local display_name="$3"
+    
+    if [ -n "$PR_NUMBER" ]; then
+        download_pr_artifact "$binary_prefix" "$binary_name"
+    else
+        # Construct download URL
+        BINARY_SUFFIX=""
+        if [ "$OS" = "windows" ]; then
+            BINARY_SUFFIX=".exe"
+        fi
+
+        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/${binary_prefix}-${PLATFORM}${BINARY_SUFFIX}"
+
+        download_binary "$DOWNLOAD_URL" "$INSTALL_DIR/$binary_name$BINARY_SUFFIX"
+    fi
+
+    # Make binary executable (not needed on Windows)
+    if [ "$OS" != "windows" ]; then
+        chmod +x "$INSTALL_DIR/$binary_name"
+    fi
+
+    log "Installed $display_name to $INSTALL_DIR/$binary_name"
 }
 
 # Main installation
@@ -129,36 +183,26 @@ main() {
     # Create install directory
     mkdir -p "$INSTALL_DIR"
 
-    if [ -n "$PR_NUMBER" ]; then
-        download_pr_artifact
-    else
-        # Determine version
+    # Determine version (only for non-PR installs)
+    if [ -z "$PR_NUMBER" ]; then
         if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
             VERSION=$(get_latest_version)
             if [ -z "$VERSION" ]; then
                 error "Failed to determine latest version"
             fi
         fi
-
         log "Installing stitch $VERSION..."
-
-        # Construct download URL
-        BINARY_SUFFIX=""
-        if [ "$OS" = "windows" ]; then
-            BINARY_SUFFIX=".exe"
-        fi
-
-        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/stitch-${PLATFORM}${BINARY_SUFFIX}"
-
-        download_binary "$DOWNLOAD_URL" "$INSTALL_DIR/$BINARY_NAME$BINARY_SUFFIX"
     fi
 
-    # Make binary executable (not needed on Windows)
-    if [ "$OS" != "windows" ]; then
-        chmod +x "$INSTALL_DIR/$BINARY_NAME"
+    # Install CLI unless --mcp-only is specified
+    if [ "$MCP_ONLY" = false ]; then
+        install_binary "stitch" "$CLI_BINARY_NAME" "stitch CLI"
     fi
 
-    log "Installed to $INSTALL_DIR/$BINARY_NAME"
+    # Install MCP unless --cli-only is specified
+    if [ "$CLI_ONLY" = false ]; then
+        install_binary "stitch-mcp" "$MCP_BINARY_NAME" "stitch MCP server"
+    fi
 
     # Check if PATH needs to be updated
     if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -188,7 +232,12 @@ main() {
 
     log "Installation complete!"
     echo ""
-    echo "Run 'stitch --help' to get started."
+    if [ "$MCP_ONLY" = false ]; then
+        echo "Run 'stitch --help' to get started with the CLI."
+    fi
+    if [ "$CLI_ONLY" = false ]; then
+        echo "Run 'stitch-mcp' to start the MCP server."
+    fi
 }
 
 main "$@"
