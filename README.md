@@ -18,14 +18,20 @@ Stitch helps you capture the "why" behind your code changes, creating a semantic
 
 ### Binary (Recommended)
 
+** 
 ```bash
-# Install both CLI and MCP server (default)
 curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview
+```
 
-# Install CLI only
+**Install CLI only**
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview --cli-only
+```
 
-# Install MCP server only
+**Install MCP server only**
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --preview --mcp-only
 ```
 
