@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "stitch": {
+      "command": "bun",
+      "args": ["src/mcp.ts"]
+    }
+  }
+}
