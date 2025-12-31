@@ -3,7 +3,7 @@
  */
 import { $ } from "bun";
 import { existsSync } from "node:fs";
-import { unlink } from "node:fs/promises";
+import { join } from "node:path";
 import type { Platform, InstallMethod } from "./types.ts";
 
 const DOWNLOAD_BASE_URL =
@@ -165,46 +165,52 @@ export async function downloadPRArtifact(
 
   const runs = JSON.parse(runsResult.stdout.toString());
   
-  // Find the run that corresponds to this PR
-  // We need to check if the run has the artifact we're looking for
-  let foundRun = null;
-  for (const run of runs) {
-    if (run.status === "completed" && run.conclusion === "success") {
-      // Try to download from this run
-      const downloadResult = await $`gh run download ${run.databaseId} --repo ${REPO} --name ${artifactName} --dir /tmp/stitch-pr-${prNumber}`.nothrow().quiet();
-      if (downloadResult.exitCode === 0) {
-        foundRun = run;
-        break;
+  // Create a secure temporary directory using tmpdir
+  const { tmpdir } = await import("node:os");
+  const { mkdtemp } = await import("node:fs/promises");
+  const tmpDir = await mkdtemp(join(tmpdir(), `stitch-pr-${prNumber}-`));
+
+  try {
+    // Find the run that corresponds to this PR
+    // We need to check if the run has the artifact we're looking for
+    let foundRun = null;
+    for (const run of runs) {
+      if (run.status === "completed" && run.conclusion === "success") {
+        // Try to download from this run
+        const downloadResult = await $`gh run download ${run.databaseId} --repo ${REPO} --name ${artifactName} --dir ${tmpDir}`.nothrow().quiet();
+        if (downloadResult.exitCode === 0) {
+          foundRun = run;
+          break;
+        }
       }
     }
+
+    if (!foundRun) {
+      throw new Error(
+        `Failed to find artifact for PR #${prNumber}. Make sure the PR exists and has completed successfully.`
+      );
+    }
+
+    // The artifact is extracted to a directory, we need to find the binary file
+    const binaryName = platform === "windows-x64" ? `stitch-${platform}.exe` : `stitch-${platform}`;
+    const tmpBinaryPath = join(tmpDir, binaryName);
+
+    if (!existsSync(tmpBinaryPath)) {
+      throw new Error(`Downloaded artifact does not contain expected binary: ${binaryName}`);
+    }
+
+    // Copy to destination
+    const binaryData = await Bun.file(tmpBinaryPath).arrayBuffer();
+    await Bun.write(destPath, binaryData);
+
+    onProgress?.("Download complete");
+  } finally {
+    // Cleanup using fs methods
+    try {
+      const { rm } = await import("node:fs/promises");
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
   }
-
-  if (!foundRun) {
-    throw new Error(
-      `Failed to find artifact for PR #${prNumber}. Make sure the PR exists and has completed successfully.`
-    );
-  }
-
-  // The artifact is extracted to a directory, we need to find the binary file
-  const tmpDir = `/tmp/stitch-pr-${prNumber}`;
-  const binaryName = platform === "windows-x64" ? `stitch-${platform}.exe` : `stitch-${platform}`;
-  const tmpBinaryPath = `${tmpDir}/${binaryName}`;
-
-  if (!existsSync(tmpBinaryPath)) {
-    throw new Error(`Downloaded artifact does not contain expected binary: ${binaryName}`);
-  }
-
-  // Copy to destination
-  const binaryData = await Bun.file(tmpBinaryPath).arrayBuffer();
-  await Bun.write(destPath, binaryData);
-
-  // Cleanup
-  try {
-    await unlink(tmpBinaryPath);
-    await $`rm -rf ${tmpDir}`.quiet();
-  } catch {
-    // Ignore cleanup errors
-  }
-
-  onProgress?.("Download complete");
 }

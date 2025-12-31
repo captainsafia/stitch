@@ -243,11 +243,14 @@ jobs:
             ### Method 3: Using GitHub CLI
 
             \`\`\`bash
-            # List available artifacts for this PR
-            gh run list --repo captainsafia/stitch --workflow pr-publish.yml
+            # Find the latest successful run for this PR
+            gh run list --repo captainsafia/stitch --workflow pr-publish.yml --json databaseId,status,conclusion --limit 10 | jq -r '.[] | select(.status=="completed" and .conclusion=="success") | .databaseId' | head -1
 
-            # Download a specific artifact (replace RUN_ID with actual run ID)
-            gh run download RUN_ID --repo captainsafia/stitch --name stitch-pr-${prNumber}-<platform>
+            # Or list recent runs to find the right one
+            gh run list --repo captainsafia/stitch --workflow pr-publish.yml --limit 10
+
+            # Download the artifact (replace RUN_ID with the ID from above)
+            gh run download <RUN_ID> --repo captainsafia/stitch --name stitch-pr-${prNumber}-<platform>
             \`\`\`
 
             **Available platforms:** \`linux-x64\`, \`linux-arm64\`, \`darwin-x64\`, \`darwin-arm64\`, \`windows-x64\`
