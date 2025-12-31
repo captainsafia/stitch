@@ -158,6 +158,21 @@ download_pr_artifact() {
 
     gh run download --repo "$REPO" --name "$ARTIFACT_NAME" --dir "$INSTALL_DIR" || \
         error "Failed to download artifact. Make sure the PR exists and has artifacts."
+    
+    # Rename the downloaded file from platform-specific name to target binary name
+    BINARY_SUFFIX=""
+    if [ "$OS" = "windows" ]; then
+        BINARY_SUFFIX=".exe"
+    fi
+    
+    DOWNLOADED_FILE="${binary_prefix}-${PLATFORM}${BINARY_SUFFIX}"
+    TARGET_FILE="${binary_name}${BINARY_SUFFIX}"
+    
+    if [ -f "$INSTALL_DIR/$DOWNLOADED_FILE" ]; then
+        mv "$INSTALL_DIR/$DOWNLOADED_FILE" "$INSTALL_DIR/$TARGET_FILE"
+    else
+        error "Downloaded file not found: $INSTALL_DIR/$DOWNLOADED_FILE"
+    fi
 }
 
 # Install a binary
