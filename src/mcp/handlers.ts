@@ -7,12 +7,16 @@ import {
   loadStitch,
   listStitches,
   saveStitch,
+  getCurrentStitchId,
+  setCurrentStitchId,
+  requireCurrentStitchId,
 } from "../core/store.ts";
 import { addCommitLink, addRangeLink, addStagedDiffFingerprint } from "../core/link.ts";
 import { stitchBlame } from "../core/blame.ts";
 import { getRepoRoot } from "../core/git.ts";
 import { updateTimestamp } from "../core/frontmatter.ts";
 import { RepoNotFoundError } from "../core/errors.ts";
+import { prepareFinish, executeFinish, type TerminalStatus } from "../core/finish.ts";
 import {
   type StitchCreateInput,
   type StitchGetInput,
@@ -23,6 +27,7 @@ import {
   type StitchLinkRangeInput,
   type StitchLinkStagedDiffInput,
   type StitchBlameInput,
+  type StitchFinishInput,
   type StitchCreateOutput,
   type StitchGetOutput,
   type StitchListOutput,
@@ -32,6 +37,7 @@ import {
   type StitchLinkRangeOutput,
   type StitchLinkStagedDiffOutput,
   type StitchBlameOutput,
+  type StitchFinishOutput,
   docToCreateOutput,
   docToGetOutput,
   docToListSummary,
@@ -309,4 +315,45 @@ export async function handleStitchBlame(
   }
 
   return blameToOutput(input.path, blameLines);
+}
+
+/**
+ * Finish a stitch (transition to terminal status)
+ */
+export async function handleStitchFinish(
+  input: StitchFinishInput
+): Promise<StitchFinishOutput> {
+  await validateRepoRoot(input.repoRoot);
+
+  // Get the stitch ID (use current if not specified)
+  const stitchId = input.stitchId ?? (await requireCurrentStitchId(input.repoRoot));
+
+  const finishOptions = {
+    status: input.status as TerminalStatus | undefined,
+    supersededBy: input.supersededBy,
+    force: input.force ?? false,
+    skipConfirmation: input.skipConfirmation ?? true, // Default to true for MCP (non-interactive)
+  };
+
+  // Prepare and execute finish
+  const preview = await prepareFinish(input.repoRoot, stitchId, finishOptions);
+  const result = await executeFinish(preview, finishOptions);
+
+  // Clear current pointer if the finished stitch was current
+  const currentId = await getCurrentStitchId(input.repoRoot);
+  if (currentId && result.finished.some((f) => f.id === currentId)) {
+    await setCurrentStitchId(input.repoRoot, null);
+  }
+
+  return {
+    finishedStitches: result.finished.map((f) => ({
+      id: f.id,
+      title: f.title,
+      previousStatus: f.previousStatus,
+      newStatus: f.newStatus,
+    })),
+    warnings: result.warnings,
+    finalStatus: result.finalStatus,
+    autoDetectedStatus: result.autoDetectedStatus,
+  };
 }

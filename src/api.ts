@@ -25,6 +25,17 @@ import { addCommitLink, addRangeLink, addStagedDiffFingerprint } from "./core/li
 import { stitchBlame } from "./core/blame.ts";
 import { getEditor } from "./platform/paths.ts";
 import { NotInitializedError } from "./core/errors.ts";
+import {
+  getChildren as getChildrenFromIndex,
+  getDescendants as getDescendantsFromIndex,
+} from "./core/indexing.ts";
+import {
+  prepareFinish,
+  executeFinish,
+  type FinishOptions,
+  type FinishResult,
+  type FinishPreview,
+} from "./core/finish.ts";
 
 // Re-export types for library consumers
 export type {
@@ -42,6 +53,14 @@ export type {
   Confidence,
 } from "./core/model.ts";
 
+export type {
+  FinishOptions,
+  FinishResult,
+  FinishPreview,
+  TerminalStatus,
+  FinishedStitch,
+} from "./core/finish.ts";
+
 export {
   StitchError,
   RepoNotFoundError,
@@ -50,6 +69,8 @@ export {
   StitchNotFoundError,
   GitError,
   ValidationError,
+  FinishForceRequiredError,
+  InvalidSupersededByError,
 } from "./core/errors.ts";
 
 /**
@@ -238,6 +259,59 @@ export class StitchClient {
   async blame(path: string): Promise<BlameLine[]> {
     const root = await this.getRepoRoot();
     return stitchBlame(root, path);
+  }
+
+  /**
+   * Get direct children of a stitch
+   */
+  async getChildren(id: StitchId): Promise<StitchId[]> {
+    const root = await this.getRepoRoot();
+    return getChildrenFromIndex(root, id);
+  }
+
+  /**
+   * Get all descendants (children, grandchildren, etc.) of a stitch
+   */
+  async getDescendants(id: StitchId): Promise<StitchId[]> {
+    const root = await this.getRepoRoot();
+    return getDescendantsFromIndex(root, id);
+  }
+
+  /**
+   * Prepare a finish operation without executing it.
+   * Returns information needed to confirm or abort the operation.
+   */
+  async prepareFinish(id?: StitchId, options?: FinishOptions): Promise<FinishPreview> {
+    const root = await this.getRepoRoot();
+    const stitchId = id ?? (await requireCurrentStitchId(root));
+    return prepareFinish(root, stitchId, options);
+  }
+
+  /**
+   * Execute a prepared finish operation.
+   * Clears the current stitch pointer after successful finish.
+   */
+  async executeFinish(preview: FinishPreview, options?: FinishOptions): Promise<FinishResult> {
+    const root = await this.getRepoRoot();
+    const result = await executeFinish(preview, options);
+
+    // Clear current pointer after successful finish
+    const currentId = await getCurrentStitchId(root);
+    if (currentId && result.finished.some((f) => f.id === currentId)) {
+      await setCurrentStitchId(root, null);
+    }
+
+    return result;
+  }
+
+  /**
+   * Finish a stitch (transition to terminal status).
+   * High-level method that prepares and executes in one call.
+   * Use prepareFinish + executeFinish separately when confirmation is needed.
+   */
+  async finish(id?: StitchId, options?: FinishOptions): Promise<FinishResult> {
+    const preview = await this.prepareFinish(id, options);
+    return this.executeFinish(preview, options);
   }
 
   /**
