@@ -1,10 +1,14 @@
 /**
  * Binary download functionality
  */
+import { $ } from "bun";
+import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import type { Platform, InstallMethod } from "./types.ts";
 
 const DOWNLOAD_BASE_URL =
   "https://github.com/captainsafia/stitch/releases/download";
+const REPO = "captainsafia/stitch";
 
 /**
  * Detect current platform
@@ -129,4 +133,78 @@ export async function downloadBinary(
 
   // Write to file using Bun's file API
   await Bun.write(destPath, binary);
+}
+
+/**
+ * Download binary from PR artifacts using GitHub CLI
+ */
+export async function downloadPRArtifact(
+  prNumber: string,
+  destPath: string,
+  onProgress?: (message: string) => void
+): Promise<void> {
+  // Check if gh CLI is installed
+  const ghCheck = await $`which gh`.nothrow().quiet();
+  if (ghCheck.exitCode !== 0) {
+    throw new Error(
+      "GitHub CLI (gh) is required to download PR artifacts. Install it from https://cli.github.com/"
+    );
+  }
+
+  const platform = detectPlatform();
+  const artifactName = `stitch-pr-${prNumber}-${platform}`;
+
+  onProgress?.(`Downloading PR #${prNumber} artifact: ${artifactName}...`);
+
+  // First, list workflow runs for the PR to find the latest successful run
+  const runsResult = await $`gh run list --repo ${REPO} --workflow pr-publish.yml --json databaseId,status,conclusion,headBranch --limit 50`.nothrow().quiet();
+  
+  if (runsResult.exitCode !== 0) {
+    throw new Error(`Failed to list workflow runs: ${runsResult.stderr.toString()}`);
+  }
+
+  const runs = JSON.parse(runsResult.stdout.toString());
+  
+  // Find the run that corresponds to this PR
+  // We need to check if the run has the artifact we're looking for
+  let foundRun = null;
+  for (const run of runs) {
+    if (run.status === "completed" && run.conclusion === "success") {
+      // Try to download from this run
+      const downloadResult = await $`gh run download ${run.databaseId} --repo ${REPO} --name ${artifactName} --dir /tmp/stitch-pr-${prNumber}`.nothrow().quiet();
+      if (downloadResult.exitCode === 0) {
+        foundRun = run;
+        break;
+      }
+    }
+  }
+
+  if (!foundRun) {
+    throw new Error(
+      `Failed to find artifact for PR #${prNumber}. Make sure the PR exists and has completed successfully.`
+    );
+  }
+
+  // The artifact is extracted to a directory, we need to find the binary file
+  const tmpDir = `/tmp/stitch-pr-${prNumber}`;
+  const binaryName = platform === "windows-x64" ? `stitch-${platform}.exe` : `stitch-${platform}`;
+  const tmpBinaryPath = `${tmpDir}/${binaryName}`;
+
+  if (!existsSync(tmpBinaryPath)) {
+    throw new Error(`Downloaded artifact does not contain expected binary: ${binaryName}`);
+  }
+
+  // Copy to destination
+  const binaryData = await Bun.file(tmpBinaryPath).arrayBuffer();
+  await Bun.write(destPath, binaryData);
+
+  // Cleanup
+  try {
+    await unlink(tmpBinaryPath);
+    await $`rm -rf ${tmpDir}`.quiet();
+  } catch {
+    // Ignore cleanup errors
+  }
+
+  onProgress?.("Download complete");
 }

@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { $ } from "bun";
 import {
   downloadBinary,
+  downloadPRArtifact,
   getDownloadUrl,
   detectPlatform,
   detectInstallMethod,
@@ -47,7 +48,8 @@ async function cleanupOldBinaries(execPath: string): Promise<void> {
 async function installBinaryUpdate(
   targetVersion: string,
   currentVersion: string,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  prNumber?: string
 ): Promise<UpdateResult> {
   const platform = detectPlatform();
   const execPath = getCurrentExecutablePath();
@@ -56,24 +58,31 @@ async function installBinaryUpdate(
 
   const newBinaryPath = join(dir, isWindows ? "stitch.new.exe" : "stitch.new");
   const oldBinaryPath = join(dir, isWindows ? "stitch.old.exe" : "stitch.old");
-  const downloadUrl = getDownloadUrl(targetVersion, platform);
 
   try {
     // Clean up any leftover files from previous updates
     await cleanupOldBinaries(execPath);
 
     // Download new binary
-    onProgress?.(`Downloading stitch v${targetVersion}...`);
-    let lastPercent = 0;
-    await downloadBinary(downloadUrl, newBinaryPath, (downloaded, total) => {
-      if (total) {
-        const percent = Math.round((downloaded / total) * 100);
-        if (percent !== lastPercent && percent % 10 === 0) {
-          onProgress?.(`Downloading: ${percent}%`);
-          lastPercent = percent;
+    if (prNumber) {
+      // Download from PR artifact
+      onProgress?.(`Downloading from PR #${prNumber}...`);
+      await downloadPRArtifact(prNumber, newBinaryPath, onProgress);
+    } else {
+      // Download from release
+      const downloadUrl = getDownloadUrl(targetVersion, platform);
+      onProgress?.(`Downloading stitch v${targetVersion}...`);
+      let lastPercent = 0;
+      await downloadBinary(downloadUrl, newBinaryPath, (downloaded, total) => {
+        if (total) {
+          const percent = Math.round((downloaded / total) * 100);
+          if (percent !== lastPercent && percent % 10 === 0) {
+            onProgress?.(`Downloading: ${percent}%`);
+            lastPercent = percent;
+          }
         }
-      }
-    });
+      });
+    }
 
     // Make executable (non-Windows)
     if (!isWindows) {
@@ -217,18 +226,35 @@ async function installBunUpdate(
 export async function installUpdate(
   targetVersion: string,
   currentVersion: string,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  prNumber?: string
 ): Promise<UpdateResult> {
   const installMethod = detectInstallMethod();
 
   switch (installMethod) {
     case "binary":
-      return installBinaryUpdate(targetVersion, currentVersion, onProgress);
+      return installBinaryUpdate(targetVersion, currentVersion, onProgress, prNumber);
 
     case "npm":
+      if (prNumber) {
+        return {
+          success: false,
+          previousVersion: currentVersion,
+          newVersion: targetVersion,
+          error: "PR updates are only available for standalone binary installations.",
+        };
+      }
       return installNpmUpdate(targetVersion, currentVersion, onProgress);
 
     case "bun":
+      if (prNumber) {
+        return {
+          success: false,
+          previousVersion: currentVersion,
+          newVersion: targetVersion,
+          error: "PR updates are only available for standalone binary installations.",
+        };
+      }
       return installBunUpdate(targetVersion, currentVersion, onProgress);
 
     case "dev":

@@ -319,23 +319,34 @@ program
     }
   });
 
-// stitch update [--target <ver>] [--preview] [--yes]
+// stitch update [--target <ver>] [--preview] [--pr <number>] [--yes]
 program
   .command("update")
   .description("Update stitch to the latest version")
   .allowExcessArguments(false)
   .option("-t, --target <version>", "Install a specific version")
   .option("-p, --preview", "Install the latest preview version")
+  .option("--pr <number>", "Install from a PR artifact (requires gh CLI)")
   .option("-y, --yes", "Skip confirmation prompt")
   .action(
-    async (options: { target?: string; preview?: boolean; yes?: boolean }) => {
+    async (options: { target?: string; preview?: boolean; pr?: string; yes?: boolean }) => {
       try {
         const current = packageJson.version;
         const installMethod = detectInstallMethod();
         let targetVersion: string;
 
+        // Validate mutually exclusive options
+        const optionCount = [options.target, options.preview, options.pr].filter(Boolean).length;
+        if (optionCount > 1) {
+          console.error("Error: Cannot specify more than one of --target, --preview, or --pr");
+          process.exit(1);
+        }
+
         // Determine target version
-        if (options.target) {
+        if (options.pr) {
+          // For PR installs, we don't have a version number yet
+          targetVersion = `PR #${options.pr}`;
+        } else if (options.target) {
           targetVersion = options.target;
         } else if (options.preview) {
           console.log("Checking for latest preview version...");
@@ -361,8 +372,8 @@ program
           targetVersion = stableRelease.tagName.replace(/^v/, "");
         }
 
-        // Check if update is needed
-        if (current === targetVersion) {
+        // Check if update is needed (skip for PR installs)
+        if (!options.pr && current === targetVersion) {
           console.log(`Already running stitch v${current}`);
           return;
         }
@@ -398,7 +409,8 @@ program
           current,
           (message) => {
             console.log(message);
-          }
+          },
+          options.pr
         );
 
         if (result.success) {
