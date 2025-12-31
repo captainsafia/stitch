@@ -204,3 +204,62 @@ jobs:
           name: stitch-mcp-pr-${{ github.event.pull_request.number }}-darwin-arm64
           path: stitch-mcp-darwin-arm64
           retention-days: 30
+
+  post-comment:
+    runs-on: ubuntu-latest
+    needs: [build-linux-windows, build-macos]
+    if: success()
+    steps:
+      - name: Post PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const comment = `## 🎉 PR Build Artifacts Available
+
+            The PR build has completed successfully! You can download and test the binaries from this PR using one of the following methods:
+
+            ### Method 1: Using the install script
+
+            \`\`\`bash
+            # Install CLI only
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --pr ${prNumber} --cli-only
+
+            # Install MCP server only
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --pr ${prNumber} --mcp-only
+
+            # Install both CLI and MCP server
+            curl -fsSL https://raw.githubusercontent.com/captainsafia/stitch/main/scripts/install.sh | bash -s -- --pr ${prNumber}
+            \`\`\`
+
+            ### Method 2: Using \`stitch update\` command
+
+            If you already have stitch installed as a standalone binary:
+
+            \`\`\`bash
+            stitch update --pr ${prNumber}
+            \`\`\`
+
+            ### Method 3: Using GitHub CLI
+
+            \`\`\`bash
+            # Find the latest successful run for this PR
+            gh run list --repo captainsafia/stitch --workflow pr-publish.yml --json databaseId,status,conclusion --limit 10 | jq -r '.[] | select(.status=="completed" and .conclusion=="success") | .databaseId' | head -1
+
+            # Or list recent runs to find the right one
+            gh run list --repo captainsafia/stitch --workflow pr-publish.yml --limit 10
+
+            # Download the artifact (replace RUN_ID with the ID from above)
+            gh run download <RUN_ID> --repo captainsafia/stitch --name stitch-pr-${prNumber}-<platform>
+            \`\`\`
+
+            **Available platforms:** \`linux-x64\`, \`linux-arm64\`, \`darwin-x64\`, \`darwin-arm64\`, \`windows-x64\`
+
+            **Note:** Artifacts are retained for 30 days.`;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: comment
+            });
