@@ -1,4 +1,5 @@
 import type { StitchDoc, BlameLine, StatusResult } from "./model.ts";
+import type { FinishResult, FinishPreview } from "./finish.ts";
 
 /**
  * Render a list of stitches as a table
@@ -198,4 +199,86 @@ export function renderSuccess(message: string): string {
  */
 export function renderInfo(message: string): string {
   return message;
+}
+
+/**
+ * Render a warning message
+ */
+export function renderWarning(message: string): string {
+  return `⚠ ${message}`;
+}
+
+/**
+ * Render finish preview for confirmation prompt
+ */
+export function renderFinishPreview(preview: FinishPreview): string {
+  const lines: string[] = [];
+
+  lines.push(`This will finish ${preview.affected.length} stitch${preview.affected.length > 1 ? "es" : ""}:`);
+  lines.push("");
+
+  for (const doc of preview.affected) {
+    const isTarget = doc.frontmatter.id === preview.target.frontmatter.id;
+    const prefix = isTarget ? "  → " : "    ";
+    const statusChange = doc.frontmatter.status !== preview.finalStatus
+      ? ` (${doc.frontmatter.status} → ${preview.finalStatus})`
+      : ` (already ${preview.finalStatus})`;
+    lines.push(`${prefix}${doc.frontmatter.id}: ${truncate(doc.frontmatter.title, 40)}${statusChange}`);
+  }
+
+  if (preview.warnings.length > 0) {
+    lines.push("");
+    for (const warning of preview.warnings) {
+      lines.push(renderWarning(warning));
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Render finish result
+ */
+export function renderFinishResult(result: FinishResult): string {
+  const lines: string[] = [];
+
+  if (result.finished.length === 0) {
+    return "No stitches were finished.";
+  }
+
+  const targetStitch = result.finished[0]!;
+  const childCount = result.finished.length - 1;
+
+  lines.push(
+    renderSuccess(
+      `Finished stitch ${targetStitch.id} (status: ${result.finalStatus})`
+    )
+  );
+  lines.push(`  Title: ${targetStitch.title}`);
+
+  if (result.autoDetectedStatus) {
+    lines.push(`  Reason: Auto-detected based on stitch state`);
+  }
+
+  if (childCount > 0) {
+    lines.push(`  Children finished: ${childCount}`);
+    for (let i = 1; i < result.finished.length; i++) {
+      const child = result.finished[i]!;
+      lines.push(`    - ${child.id}: ${truncate(child.title, 30)}`);
+    }
+  }
+
+  // Show warnings at the end
+  if (result.warnings.length > 0) {
+    lines.push("");
+    for (const warning of result.warnings) {
+      if (!warning.startsWith("Warning:")) {
+        lines.push(renderWarning(warning));
+      } else {
+        lines.push(`⚠ ${warning}`);
+      }
+    }
+  }
+
+  return lines.join("\n");
 }

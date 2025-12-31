@@ -58,3 +58,17 @@ export class ValidationError extends StitchError {
     this.name = "ValidationError";
   }
 }
+
+export class FinishForceRequiredError extends StitchError {
+  constructor(message: string) {
+    super(message);
+    this.name = "FinishForceRequiredError";
+  }
+}
+
+export class InvalidSupersededByError extends StitchError {
+  constructor() {
+    super("--by requires --status=superseded");
+    this.name = "InvalidSupersededByError";
+  }
+}

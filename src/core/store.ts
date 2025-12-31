@@ -10,6 +10,7 @@ import {
 import { parseStitchFile, serializeStitchFile, updateTimestamp } from "./frontmatter.ts";
 import { generateStitchId } from "./ids.ts";
 import { DEFAULT_STITCH_BODY } from "./model.ts";
+import { addChildToIndex } from "./indexing.ts";
 
 const STITCH_DIR = ".stitch";
 const STITCHES_SUBDIR = "stitches";
@@ -128,6 +129,11 @@ export async function createStitch(
   const content = serializeStitchFile(frontmatter, DEFAULT_STITCH_BODY);
 
   await writeFile(filePath, content, "utf-8");
+
+  // Update the parent-children index if this is a child stitch
+  if (parentId) {
+    await addChildToIndex(repoRoot, parentId, id);
+  }
 
   return {
     frontmatter,

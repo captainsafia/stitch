@@ -59,6 +59,15 @@ export const StitchBlameInputSchema = z.object({
   lineEnd: z.number().int().positive().optional().describe("End line (1-indexed, inclusive)"),
 });
 
+export const StitchFinishInputSchema = z.object({
+  repoRoot: z.string().describe("Absolute path to the git repository root"),
+  stitchId: z.string().optional().describe("Stitch ID to finish (defaults to current)"),
+  status: z.enum(["closed", "superseded", "abandoned"]).optional().describe("Target status (default: closed)"),
+  supersededBy: z.string().optional().describe("Superseding stitch ID (requires status=superseded)"),
+  force: z.boolean().optional().describe("Override auto-abandoned detection"),
+  skipConfirmation: z.boolean().optional().describe("Skip cascade confirmation (equivalent to --yes)"),
+});
+
 /**
  * Type definitions derived from schemas
  */
@@ -71,6 +80,7 @@ export type StitchLinkCommitInput = z.infer<typeof StitchLinkCommitInputSchema>;
 export type StitchLinkRangeInput = z.infer<typeof StitchLinkRangeInputSchema>;
 export type StitchLinkStagedDiffInput = z.infer<typeof StitchLinkStagedDiffInputSchema>;
 export type StitchBlameInput = z.infer<typeof StitchBlameInputSchema>;
+export type StitchFinishInput = z.infer<typeof StitchFinishInputSchema>;
 
 /**
  * Output types for MCP tools
@@ -129,6 +139,18 @@ export type StitchBlameLineOutput = {
 export type StitchBlameOutput = {
   path: string;
   lines: StitchBlameLineOutput[];
+};
+
+export type StitchFinishOutput = {
+  finishedStitches: Array<{
+    id: string;
+    title: string;
+    previousStatus: string;
+    newStatus: string;
+  }>;
+  warnings: string[];
+  finalStatus: string;
+  autoDetectedStatus: boolean;
 };
 
 /**

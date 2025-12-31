@@ -13,6 +13,7 @@ import {
   StitchLinkRangeInputSchema,
   StitchLinkStagedDiffInputSchema,
   StitchBlameInputSchema,
+  StitchFinishInputSchema,
 } from "./mcp/schemas.ts";
 import {
   handleStitchCreate,
@@ -24,6 +25,7 @@ import {
   handleStitchLinkRange,
   handleStitchLinkStagedDiff,
   handleStitchBlame,
+  handleStitchFinish,
 } from "./mcp/handlers.ts";
 import { StitchError } from "./core/errors.ts";
 
@@ -207,6 +209,23 @@ function createServer(): McpServer {
     async (args) => {
       try {
         const result = await handleStitchBlame(args);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        return { content: formatError(error), isError: true };
+      }
+    }
+  );
+
+  // stitch_finish
+  server.registerTool(
+    "stitch_finish",
+    {
+      description: "Finish a stitch by transitioning it to a terminal status (closed, superseded, or abandoned). Supports cascade closing of children and auto-detection of abandoned status.",
+      inputSchema: StitchFinishInputSchema,
+    },
+    async (args) => {
+      try {
+        const result = await handleStitchFinish(args);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error) {
         return { content: formatError(error), isError: true };

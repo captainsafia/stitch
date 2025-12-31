@@ -13,12 +13,17 @@ import {
   renderBlamePlain,
   renderBlameJson,
   renderSuccess,
+  renderFinishPreview,
+  renderFinishResult,
 } from "./core/render.ts";
 import {
   StitchError,
   NotInitializedError,
   NoCurrentStitchError,
+  FinishForceRequiredError,
+  InvalidSupersededByError,
 } from "./core/errors.ts";
+import type { TerminalStatus } from "./core/finish.ts";
 import {
   installUpdate,
   detectPlatform,
@@ -319,6 +324,72 @@ program
     }
   });
 
+// stitch finish [id] [--status <status>] [--by <id>] [--force] [--yes]
+program
+  .command("finish")
+  .description("Finish a stitch (transition to terminal status)")
+  .argument("[id]", "Stitch ID to finish (defaults to current)")
+  .addOption(
+    new Option("-s, --status <status>", "Target status")
+      .choices(["closed", "superseded", "abandoned"])
+      .default("closed")
+  )
+  .option("-b, --by <id>", "Superseding stitch ID (requires --status=superseded)")
+  .option("-f, --force", "Override auto-abandoned detection")
+  .option("-y, --yes", "Skip confirmation prompt for cascade closes")
+  .action(
+    async (
+      id: string | undefined,
+      options: {
+        status: string;
+        by?: string;
+        force?: boolean;
+        yes?: boolean;
+      }
+    ) => {
+      using client = new StitchClient();
+
+      try {
+        const finishOptions = {
+          status: options.status as TerminalStatus,
+          supersededBy: options.by,
+          force: options.force ?? false,
+          skipConfirmation: options.yes ?? false,
+        };
+
+        // Prepare the finish operation
+        const preview = await client.prepareFinish(id, finishOptions);
+
+        // Check if force is required
+        if (preview.forceRequired) {
+          console.error(`Error: ${preview.forceRequired}`);
+          process.exit(1);
+        }
+
+        // Show preview and ask for confirmation if needed
+        if (preview.requiresConfirmation && !options.yes) {
+          console.log(renderFinishPreview(preview));
+          console.log("");
+
+          const answer = prompt("Continue? [y/N]");
+          if (
+            answer?.toLowerCase() !== "y" &&
+            answer?.toLowerCase() !== "yes"
+          ) {
+            console.log("Cancelled.");
+            return;
+          }
+        }
+
+        // Execute the finish
+        const result = await client.executeFinish(preview, finishOptions);
+        console.log(renderFinishResult(result));
+      } catch (error) {
+        handleError(error);
+      }
+    }
+  );
+
 // stitch update [--target <ver>] [--preview] [--pr <number>] [--yes]
 program
   .command("update")
@@ -439,6 +510,16 @@ function handleError(error: unknown): never {
   }
 
   if (error instanceof NoCurrentStitchError) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+
+  if (error instanceof FinishForceRequiredError) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+
+  if (error instanceof InvalidSupersededByError) {
     console.error(`Error: ${error.message}`);
     process.exit(1);
   }
